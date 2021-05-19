@@ -1,0 +1,384 @@
+#include<iostream>
+#include<cstring>
+#include<cstdio>
+#include<cstdlib>
+#include<algorithm>
+#include<cmath>
+#include<queue>
+#include<stack>
+using namespace std;
+typedef unsigned char uc;
+const int block=1<<20;
+struct node
+{
+	short c[2];
+	short pa;
+};
+node mn(short c0,short c1,short pa)//son0,son1,parent
+{
+	node re;
+	re.c[0]=c0;
+	re.c[1]=c1;
+	re.pa=pa;
+	return re;
+}
+struct pii
+{
+	int num;//the val of byte
+	int cnt;//the frequence of byte
+	bool operator <(const pii &b)const
+	{
+		return cnt<b.cnt;
+	}
+	bool operator >(const pii &b)const
+	{
+		return cnt>b.cnt;
+	}
+};
+pii mp(int num,int cnt)
+{
+	pii re;
+	re.num=num;
+	re.cnt=cnt;
+	return re;
+}
+pii make_huf(int cnt[],node T[])
+{
+	priority_queue<pii,vector<pii>,greater<pii> >q;
+	for(int i=0;i<256;i++)
+	{
+		if(cnt[i])q.push(mp(i,cnt[i]));//忽略未出现的编码 
+	}
+	short node_num=255;
+	int cnt_2=0;
+	while(q.size()>1)
+	{
+		pii top0,top1;
+		top0=q.top();q.pop();
+		top1=q.top();q.pop();
+		++node_num;
+		q.push(mp(node_num,top0.cnt+top1.cnt));
+		T[top0.num].pa=node_num;
+		T[top1.num].pa=node_num;
+		T[node_num]=mn(top0.num,top1.num,511);
+		cnt_2+=top0.cnt+top1.cnt;
+	}
+	pii root=q.top();q.pop();
+	if(cnt_2==0)//只有一种字节的情况 
+	{
+		++node_num;
+		T[node_num]=mn(root.num,511,511);
+		T[root.num].pa=node_num;
+		cnt_2=root.cnt;
+		root.num=node_num;
+	}
+	return mp(root.num,cnt_2);
+}
+void print_huf(node T[],pii root,FILE *target)
+{
+	int num=root.num;
+	int cnt=root.cnt;
+	fwrite(&num,2,1,target);//根结点的编号 
+	fwrite(&cnt,4,1,target);//哈夫曼编码的长度 
+	for(int i=0;i<511;i++)//哈夫曼树的结构 
+	{
+		fwrite(T[i].c,2,2,target);
+	}
+}
+void huf_code(bool *path[],int size[],node T[])
+{
+	stack<bool>temp;
+	for(int i=0;i<256;i++)
+	{
+		int now=i;
+		while(1)//从叶结点向上访问，直到找到根结点，记录路径 
+		{
+			int pa=T[now].pa;
+			if(pa==511)break;
+			temp.push(T[pa].c[1]==now);
+			now=pa;
+		}
+		path[i]=(bool *)malloc(temp.size()*sizeof(bool));
+		size[i]=temp.size();
+		int cnt=0;
+		while(!temp.empty())
+		{
+			path[i][cnt++]=temp.top();
+			temp.pop();
+		}
+	}
+}
+void huf_seq(node T[],queue<uc> &q,FILE *target)
+{
+	bool *path[256];//每个字节的编码
+	int size[256];
+	huf_code(path,size,T);//根据哈夫曼树生成每个字节的编码 
+	queue<bool>ans;
+	while(!q.empty())
+	{
+		uc now=q.front();q.pop();
+		for(int i=0;i<size[now];i++)ans.push(path[now][i]);//把生成的二进制串放入ans队列 
+	}
+	for(int i=0;i<256;i++)free(path[i]);
+	int x=0,bit=0;
+	while(!ans.empty())
+	{
+		x=x|(ans.front()<<bit);
+		ans.pop();
+		bit++;
+		if(bit==8)
+		{
+			bit=0;
+			fwrite(&x,1,1,target);
+			x=0;
+		}
+	}
+	if(bit)
+	{
+		fwrite(&x,1,1,target);
+	}
+}
+bool seg(FILE *source,FILE *target)
+{
+	queue<uc>q;
+	int cnt[256];
+	node T[512];
+	for(int i=0;i<256;i++)cnt[i]=0;
+	for(int i=0;i<512;i++)T[i]=mn(511,511,511);//511是一个虚空结点 
+	bool not_over=1;
+	for(int i=0;i<block;i++)//block即1M 
+	{
+		uc temp;
+		if(fread(&temp,1,1,source)==0)//读取文件失败，文件结束了 
+		{
+			not_over=0;
+			if(i==0)return 0; 
+			break;
+		}
+		q.push(temp);
+		cnt[temp]++;
+	}
+	pii root=make_huf(cnt,T);//根据词频生成哈夫曼树
+	print_huf(T,root,target);//在目标文件中打印哈夫曼树 
+	huf_seq(T,q,target);//建立编码表，并打印编码 
+	return not_over;
+}
+void pack()
+{
+	printf("请输入待压缩文件绝对路径及名称(用鼠标将文件拖入程序即可，注意删除引号)，不能超过1000个字符\n");
+	char name1[1010];
+	fflush(stdin);
+	scanf("%[^\n]",name1);
+	fflush(stdin);
+	if(name1[1]!=':')
+	{
+		printf("请输入绝对路径\n");
+		return ;
+	}
+	
+	FILE *source=fopen(name1,"rb");
+	if(source==NULL)
+	{
+		printf("找不到文件\n");
+		return ;
+	}
+	printf("请输入目标文件绝对路径及名称(用鼠标将文件拖入程序即可，注意删除引号)，不能超过1000个字符\n");
+	char name2[1010];
+	scanf("%[^\n]",name2);
+	fflush(stdin);
+	if(name2[1]!=':')
+	{
+		printf("请输入绝对路径\n"); 
+		fclose(source);
+		return ; 
+	}
+	if(strcmp(name1,name2)==0)
+	{
+		printf("源文件与目标文件路径一致，不可压缩\n");
+		fclose(source);
+		return ;
+	}
+	FILE *target=fopen(name2,"wb");
+	if(target==NULL)
+	{
+		printf("目标文件的路径非法\n");
+		fclose(source);
+	}
+	int i=0;
+	while(seg(source,target))
+	{
+		printf("%dMB\n",++i);
+	}
+	fclose(source);
+	fclose(target);
+}
+bool check(node T[],int root)
+{
+	queue<short>q;
+	bool vis[512];
+	memset(vis,0,sizeof(vis));
+	q.push(root);
+	while(!q.empty())//层序遍历哈夫曼树，检测它是不是树 
+	{
+		int now=q.front();q.pop();
+		if(vis[now])//不是树形结构 
+		{
+			return 0;
+		}
+		vis[now]=1;
+		if(T[now].c[0]<511)
+		{
+			q.push(T[now].c[0]);
+		}
+		if(T[now].c[1]<511)
+		{
+			q.push(T[now].c[1]);
+		}
+	}
+	return 1;
+}
+bool un_seg(FILE *source,FILE *target)
+{
+	short root;
+	int cnt;
+	
+	int flag1=fread(&root,2,1,source);
+	int flag2=fread(&cnt,4,1,source);
+	if(flag1==0||flag2==0)//解压缩完毕 
+	{
+		return 0;
+	}
+	if(cnt>8*block||cnt<0||root>511||root<0)
+	{
+		printf("wrong\n");
+		return 0;
+	}
+	node T[512];
+	
+	for(int i=0;i<511;i++)
+	{
+		int act=fread(T[i].c,2,2,source);
+		if(act!=2)
+		{
+			printf("wrong\n");
+			return 0;
+		}
+		if(T[i].c[0]>511||T[i].c[0]<0)
+		{
+			printf("wrong\n");
+			return 0;
+		}
+		if(T[i].c[1]>511||T[i].c[1]<0)
+		{
+			printf("wrong\n");
+			return 0;
+		}
+	}
+	if(check(T,root)==0)
+	{
+		printf("wrong\n");
+		return 0;
+	}
+	uc x;
+	queue<bool>q;
+	for(int i=0;i<cnt;i++)//文件是以字节为单位保存的，该代码把一串字节变成了一个二进制串，存在队列中 
+	{
+		int bit=i%8;
+		if(bit==0)
+		{
+			fread(&x,1,1,source);
+		}
+		bool ans=x&(1<<bit);
+		q.push(ans);
+	}
+	int now=root;//从树根开始译码 
+	
+	while(!q.empty())
+	{
+		if(T[now].c[0]!=T[now].c[1])//不是叶结点 
+		{
+			bool ans=q.front();q.pop();
+			now=T[now].c[ans];//根据二进制串在哈夫曼树上进行跳转 
+		}
+		if(now<256)//叶节点 
+		{
+			uc out=now;
+			fwrite(&out,1,1,target);//输出叶结点的字节编码 
+			now=root;//回到树根 
+		}
+	}
+	return 1;
+}
+void unpack()
+{
+	printf("请输入待解压缩文绝对路径及名称(用鼠标将文件拖入程序即可，注意删除引号)，不能超过1000个字符\n");
+	char name1[1010];
+	fflush(stdin);
+	scanf("%[^\n]",name1);
+	fflush(stdin);
+	if(name1[1]!=':')
+	{
+		printf("请输入绝对路径\n");
+		return ;
+	}
+	
+	FILE *source=fopen(name1,"rb");
+	if(source==NULL)
+	{
+		printf("找不到文件\n");
+		return ;
+	}
+	printf("请输入目标文件绝对路径及名称(用鼠标将文件拖入程序即可，注意删除引号)，不能超过1000个字符\n");
+	char name2[1010];
+	scanf("%[^\n]",name2);
+	fflush(stdin);
+	if(name2[1]!=':')
+	{
+		printf("请输入绝对路径\n"); 
+		fclose(source);
+		return ; 
+	}
+	if(strcmp(name1,name2)==0)
+	{
+		printf("源文件与目标文件路径一致，不可解压缩\n");
+		fclose(source);
+		return ;
+	}
+	FILE *target=fopen(name2,"wb");
+	if(target==NULL)
+	{
+		printf("目标文件的路径非法\n");
+		fclose(source);
+		return ; 
+	}
+	int i=0;
+	while(un_seg(source,target))
+	{
+		printf("%dMB\n",++i);
+	}
+	fclose(source);
+	fclose(target);
+}
+bool solve()
+{
+	printf("压缩文件请输入z，解压缩文件请输入u，结束请输入其它键\n");
+	char ch;
+	scanf("%c",&ch);
+	fflush(stdin);
+	if(ch=='z')
+	{
+		pack();
+		return 1;
+	}
+	else if(ch=='u')
+	{
+		unpack();
+		return 1;
+	}
+	else return 0;
+}
+int main()
+{
+	while(solve());
+	return 0;
+}

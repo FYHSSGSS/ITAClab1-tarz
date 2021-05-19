@@ -1,0 +1,3 @@
+C:/Users/FYHSSGSS/Documents/University/2021spring/ITAC/ITAClab1/streamtarz/cmake-build-debug/CMakeFiles/streamtarz.dir
+C:/Users/FYHSSGSS/Documents/University/2021spring/ITAC/ITAClab1/streamtarz/cmake-build-debug/CMakeFiles/edit_cache.dir
+C:/Users/FYHSSGSS/Documents/University/2021spring/ITAC/ITAClab1/streamtarz/cmake-build-debug/CMakeFiles/rebuild_cache.dir
